@@ -12,7 +12,7 @@ import {
 import { 
   Plus, CheckCircle2, Circle, Trash2, Share2, Menu, X, 
   Users, Copy, List as ListIcon, LogOut, Check, UserPlus,
-  ChevronDown, ChevronRight, AlignLeft, Bold, Italic, Calendar
+  ChevronDown, ChevronRight, AlignLeft, Bold, Italic, Calendar, Edit2
 } from 'lucide-react';
 
 // --- FOOLPROOF STYLING FALLBACK ---
@@ -93,6 +93,14 @@ export default function App() {
   const [editingDescText, setEditingDescText] = useState('');
   const descInputRef = useRef(null);
 
+  const [isEditingListTitle, setIsEditingListTitle] = useState(false);
+  const [editListTitleText, setEditListTitleText] = useState('');
+
+  // Reset list editing state when switching lists
+  useEffect(() => {
+    setIsEditingListTitle(false);
+  }, [currentListId]);
+
   // 2. Auth Initialization
   useEffect(() => {
     if (firebaseInitError || !auth) {
@@ -124,7 +132,8 @@ export default function App() {
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Google login failed:", error);
-      showToast("Sign in with Google failed.", "error");
+      const errorMsg = error.code ? error.code.replace('auth/', '').replace(/-/g, ' ') : error.message;
+      showToast(`Google Sign-In Error: ${errorMsg}`, "error");
       setAuthLoading(false);
     }
   };
@@ -135,7 +144,8 @@ export default function App() {
       await signInAnonymously(auth);
     } catch (error) {
       console.error("Anonymous login failed:", error);
-      showToast("Anonymous sign in failed.", "error");
+      const errorMsg = error.code ? error.code.replace('auth/', '').replace(/-/g, ' ') : error.message;
+      showToast(`Anonymous Sign-In Error: ${errorMsg}`, "error");
       setAuthLoading(false);
     }
   };
@@ -240,6 +250,25 @@ export default function App() {
       console.error(err);
       showToast("Error creating list.", "error");
     }
+  };
+
+  const saveEditedListTitle = async () => {
+    if (!isOwner || !db || !currentListId) {
+      setIsEditingListTitle(false);
+      return;
+    }
+    const newTitle = editListTitleText.trim();
+    if (newTitle && newTitle !== currentList.title) {
+      try {
+        const listRef = doc(db, 'artifacts', appId, 'public', 'data', 'lists', currentListId);
+        await updateDoc(listRef, { title: newTitle });
+        showToast("List renamed.");
+      } catch (err) {
+        console.error(err);
+        showToast("Error renaming list.", "error");
+      }
+    }
+    setIsEditingListTitle(false);
   };
 
   const addTask = async (e) => {
@@ -636,18 +665,43 @@ export default function App() {
       <div className="flex-1 flex flex-col relative">
         {/* Header */}
         <header className="h-16 px-4 md:px-8 border-b border-gray-200 flex items-center justify-between bg-white shrink-0">
-          <div className="flex items-center">
+          <div className="flex items-center flex-1 min-w-0 mr-4">
             <button 
-              className="mr-4 p-2 text-gray-600 hover:bg-gray-100 rounded-md md:hidden"
+              className="mr-4 p-2 text-gray-600 hover:bg-gray-100 rounded-md md:hidden shrink-0"
               onClick={() => setIsSidebarOpen(true)}
             >
               <Menu size={20} />
             </button>
             {currentList ? (
-              <h1 className="text-xl font-medium text-gray-800 truncate flex items-center gap-2">
-                {currentList.title}
-                {!canEdit && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-normal">View Only</span>}
-              </h1>
+              isEditingListTitle && isOwner ? (
+                <input
+                  type="text"
+                  value={editListTitleText}
+                  onChange={(e) => setEditListTitleText(e.target.value)}
+                  onBlur={saveEditedListTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEditedListTitle();
+                    if (e.key === 'Escape') setIsEditingListTitle(false);
+                  }}
+                  autoFocus
+                  className="text-xl font-medium text-gray-800 outline-none border-b-2 border-blue-500 bg-white w-full max-w-sm px-1 py-0.5"
+                />
+              ) : (
+                <h1 
+                  className={`text-xl font-medium text-gray-800 truncate flex items-center gap-2 ${isOwner ? 'cursor-pointer group' : ''}`}
+                  onClick={() => {
+                    if (isOwner) {
+                      setEditListTitleText(currentList.title);
+                      setIsEditingListTitle(true);
+                    }
+                  }}
+                  title={isOwner ? "Click to rename list" : ""}
+                >
+                  <span className="truncate">{currentList.title}</span>
+                  {isOwner && <Edit2 size={16} className="text-gray-400 opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0" />}
+                  {!canEdit && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-normal shrink-0">View Only</span>}
+                </h1>
+              )
             ) : (
               <h1 className="text-xl font-medium text-gray-400 italic">Select a list</h1>
             )}
