@@ -9,11 +9,10 @@ import {
 import { 
   Plus, CheckCircle2, Circle, Trash2, Share2, Menu, X, 
   Users, Copy, List as ListIcon, LogOut, Check, UserPlus,
-  ChevronDown, ChevronRight, AlignLeft, Bold, Italic
+  ChevronDown, ChevronRight, AlignLeft, Bold, Italic, Calendar
 } from 'lucide-react';
 
 // --- FOOLPROOF STYLING FALLBACK ---
-// This ensures Tailwind CSS loads even if your local Vite/PostCSS config is broken.
 if (typeof window !== 'undefined' && !document.getElementById('tailwind-cdn')) {
   const script = document.createElement('script');
   script.id = 'tailwind-cdn';
@@ -52,7 +51,6 @@ try {
     app = initializeApp(localConfig);
     appId = 'local-dev-app';
 
-    // Safely initialize analytics if it's included in your config
     if (localConfig.measurementId) {
       analytics = getAnalytics(app);
     }
@@ -79,6 +77,7 @@ export default function App() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   
   const [newTaskText, setNewTaskText] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newListTitle, setNewListTitle] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [toast, setToast] = useState(null);
@@ -221,11 +220,13 @@ export default function App() {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `tasks_${currentListId}`), {
         text: newTaskText.trim(),
         description: '',
+        dueDate: newTaskDueDate || null,
         completed: false,
         createdAt: serverTimestamp(),
         createdBy: user.uid
       });
       setNewTaskText('');
+      setNewTaskDueDate('');
     } catch (err) {
       console.error(err);
       showToast("Error adding task.", "error");
@@ -264,6 +265,17 @@ export default function App() {
       setEditingTaskId(null);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const updateTaskDueDate = async (taskId, newDate) => {
+    if (!canEdit || !db) return;
+    try {
+      const taskRef = doc(db, 'artifacts', appId, 'public', 'data', `tasks_${currentListId}`, taskId);
+      await updateDoc(taskRef, { dueDate: newDate || null });
+    } catch (err) {
+      console.error(err);
+      showToast("Error updating due date.", "error");
     }
   };
 
@@ -413,7 +425,7 @@ export default function App() {
             Error: {firebaseInitError}
           </div>
           <p className="text-sm text-gray-500 bg-blue-50 p-4 rounded-md text-left">
-            <strong>How to fix:</strong><br/> Open your <code>src/App.jsx</code> file, find the <code>localConfig</code> object around line 28, and paste the settings from your Firebase console.
+            <strong>How to fix:</strong><br/> Open your <code>src/App.jsx</code> file, find the <code>localConfig</code> object around line 38, and paste the settings from your Firebase console.
           </p>
         </div>
       </div>
@@ -569,17 +581,38 @@ export default function App() {
               
               {/* Add Task Input */}
               {canEdit && (
-                <form onSubmit={addTask} className="mb-8 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Plus size={20} className="text-blue-500" />
+                <form onSubmit={addTask} className="mb-8 flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Plus size={20} className="text-blue-500" />
+                    </div>
+                    <input
+                      type="text"
+                      value={newTaskText}
+                      onChange={(e) => setNewTaskText(e.target.value)}
+                      placeholder="Add a task"
+                      className="w-full pl-10 pr-4 py-3 text-lg border-b-2 border-transparent hover:border-gray-200 focus:border-blue-500 bg-gray-50 focus:bg-white rounded-md sm:rounded-r-none outline-none transition-all"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={newTaskText}
-                    onChange={(e) => setNewTaskText(e.target.value)}
-                    placeholder="Add a task"
-                    className="w-full pl-10 pr-4 py-3 text-lg border-b-2 border-transparent hover:border-gray-200 focus:border-blue-500 bg-gray-50 focus:bg-white rounded-t-md outline-none transition-all"
-                  />
+                  <div className="flex gap-2">
+                    <div className="flex items-center bg-gray-50 rounded-md sm:rounded-none sm:rounded-l-none hover:bg-gray-100 border-b-2 border-transparent hover:border-gray-200 focus-within:border-blue-500 focus-within:bg-white transition-all px-3">
+                      <Calendar size={18} className="text-gray-400 mr-2" />
+                      <input
+                        type="date"
+                        value={newTaskDueDate}
+                        onChange={(e) => setNewTaskDueDate(e.target.value)}
+                        className="bg-transparent outline-none text-sm text-gray-600 py-3 cursor-pointer"
+                        title="Set due date"
+                      />
+                    </div>
+                    <button 
+                      type="submit" 
+                      disabled={!newTaskText.trim()}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
                 </form>
               )}
 
@@ -623,17 +656,31 @@ export default function App() {
                               className="flex-1 text-sm md:text-base outline-none bg-white border-b border-blue-500 px-1 py-0.5"
                             />
                           ) : (
-                            <span 
-                              onClick={() => {
-                                if (canEdit && !task.completed) {
-                                  setEditingTaskId(task.id);
-                                  setEditingTaskText(task.text);
-                                }
-                              }}
-                              className={`flex-1 text-sm md:text-base truncate cursor-text ${task.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}
-                            >
-                              {task.text}
-                            </span>
+                            <div className="flex-1 flex flex-col sm:flex-row sm:items-center min-w-0">
+                              <span 
+                                onClick={() => {
+                                  if (canEdit && !task.completed) {
+                                    setEditingTaskId(task.id);
+                                    setEditingTaskText(task.text);
+                                  }
+                                }}
+                                className={`text-sm md:text-base truncate cursor-text ${task.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}
+                              >
+                                {task.text}
+                              </span>
+                              
+                              {/* Display Due Date Badge */}
+                              {task.dueDate && (
+                                <span className={`mt-1 sm:mt-0 sm:ml-3 inline-flex items-center w-max gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border shrink-0 ${
+                                  task.completed 
+                                    ? 'bg-gray-100 text-gray-500 border-gray-200' 
+                                    : 'bg-blue-50 text-blue-700 border-blue-100'
+                                }`}>
+                                  <Calendar size={12} />
+                                  {task.dueDate}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
 
@@ -647,9 +694,24 @@ export default function App() {
                         )}
                       </div>
 
-                      {/* Expanded Section for Description */}
+                      {/* Expanded Section for Description & Due Date Editor */}
                       {expandedTasks.has(task.id) && (
-                        <div className="ml-14 mt-2 pl-3 border-l-2 border-gray-200">
+                        <div className="ml-14 mt-3 pl-3 border-l-2 border-gray-200">
+                          
+                          {/* Inline Due Date Editor */}
+                          {canEdit && !task.completed && (
+                            <div className="mb-4 flex items-center gap-2">
+                              <Calendar size={14} className="text-gray-400" />
+                              <span className="text-xs font-medium text-gray-500">Due:</span>
+                              <input 
+                                type="date" 
+                                value={task.dueDate || ''}
+                                onChange={(e) => updateTaskDueDate(task.id, e.target.value)}
+                                className="text-xs p-1 border border-gray-300 rounded bg-white text-gray-700 outline-none focus:border-blue-500 cursor-pointer"
+                              />
+                            </div>
+                          )}
+
                           {editingDescId === task.id ? (
                             <div className="flex flex-col space-y-2 mt-1">
                               <div className="flex space-x-1 bg-gray-100 p-1 rounded-md w-max">
@@ -668,7 +730,7 @@ export default function App() {
                                 placeholder="Add a description... (Use **bold** and *italic*)"
                               />
                               <div className="flex space-x-2">
-                                <button onClick={() => saveEditedDesc(task)} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors">Save</button>
+                                <button onClick={() => saveEditedDesc(task)} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors">Save Details</button>
                                 <button onClick={() => setEditingDescId(null)} className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-300 transition-colors">Cancel</button>
                               </div>
                             </div>
